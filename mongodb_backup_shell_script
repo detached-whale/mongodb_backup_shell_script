@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# mongodb_backup_shell_script
+#
+
+PORT=27017
+PATH_MONGO_SHELL='/usr/bin/mongo'
+PATH_DATA_DIR='/your/mongodb/data/path'
+PATH_BACKUP_DIR='/your/backup/destination'
+
+#######################################
+# Check monogdb is locked or not
+# Globals:
+#   PATH_MONGO_SHELL
+#   PORT
+# Arguments:
+#   None
+# Returns:
+#   0 : mongodb is locked
+#   1 : mongodb is not locked
+#######################################
+function check_fsync() {
+  local message=`echo "serverIsLocked = function () {
+                var co = db.currentOp();
+                if (co && co.fsyncLock) {
+                  return 0;
+                }
+                return 1;
+              }; serverIsLocked();" | $PATH_MONGO_SHELL localhost:$PORT/admin`
+  return $(echo $message | awk '{print $8}')
+}
+
+# execute db.fsyncLock()
+echo "db.fsyncLock();" | $BIN_DIR/mongo localhost:$PORT/admin
+sleep 10
+check_fsync
+if [[ "$?" -ne 0 ]]; then
+  # Do something when db.fsyncLock() is failed
+  exit
+fi
+
+# backup data
+rsync -avr $PATH_DATA_DIR $PATH_BACKUP_DIR
+if [[ "$?" -ne 0 ]]; then
+  # Do something when rsync is failed
+  exit
+fi
+
+# execute db.fsyncUnlock()
+echo "db.fsyncUnlock();" | $BIN_DIR/mongo localhost:$PORT/admin
+sleep 10
+check_fsync
+if [[ "$?" -ne 0 ]]; then
+  # Do something when db.fsyncUnlock() is failed
+  exit
+fi
